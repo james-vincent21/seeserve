@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { DemoSession } from '../apps/api/src/application/demo/demo-session.js';
+import { env } from '../apps/api/src/config/env.js';
 import type { Detection, InferenceProvider } from '../apps/api/src/domain/vision/detection.js';
 
 class TestInferenceProvider implements InferenceProvider {
@@ -34,24 +35,26 @@ describe('Standard vs Iftar Modes', () => {
       { label: 'person', confidence: 0.9, x1: 0.1, y1: 0.5, x2: 0.3, y2: 0.8 },
     ]);
 
-    // Initial frame at t=0 records pending occupancy, t=3 passes 2s debounce and seats table
-    await session.analyzeFrame('dummy', 0);
-    await session.analyzeFrame('dummy', 3);
-    assert.equal(session.snapshot().tables[0].status, 'seated');
-
-    // Switch to Iftar mode
+    // Set to Iftar mode before seating
     session.setMode('iftar');
 
-    // Frame at t=95 (past default 90s unattended threshold)
-    await session.analyzeFrame('dummy', 95);
+    // Frames at t=0 and t=1 seat the table
+    await session.analyzeFrame('dummy', 0);
+    await session.analyzeFrame('dummy', 1);
+    assert.equal(session.snapshot().tables[0].status, 'seated');
+
+    const seatedAt = session.snapshot().tables[0].seatedAt ?? 0;
+    // Time past standard threshold but within Iftar threshold (10x)
+    const earlyTime = seatedAt + env.DEMO_UNATTENDED_SECONDS + 2;
+    await session.analyzeFrame('dummy', earlyTime);
 
     // Alerts should be empty because Iftar mode suppresses early unattended alerts
     const iftarAlerts = session.snapshot().alerts.filter((a) => a.type === 'unattended');
     assert.equal(iftarAlerts.length, 0);
 
-    // Switch back to standard mode and evaluate at t=96
+    // Switch back to standard mode and evaluate at earlyTime + 1 -> now triggers
     session.setMode('standard');
-    await session.analyzeFrame('dummy', 96);
+    await session.analyzeFrame('dummy', earlyTime + 1);
 
     const standardAlerts = session.snapshot().alerts.filter((a) => a.type === 'unattended');
     assert.equal(standardAlerts.length, 1);
