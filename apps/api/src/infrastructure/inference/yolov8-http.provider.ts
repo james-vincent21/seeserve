@@ -101,7 +101,7 @@ function normalizeKeypoints(
 ): Array<{ x: number; y: number; confidence: number }> | undefined {
   let values: unknown = raw;
   let confidences: unknown[] = [];
-  if (isRecord(raw)) {
+  if (isRecord(raw) && !Array.isArray(raw)) {
     values = raw.xy ?? raw.keypoints ?? raw.data;
     confidences = Array.isArray(raw.conf) ? raw.conf : Array.isArray(raw.confidence) ? raw.confidence : [];
   }
