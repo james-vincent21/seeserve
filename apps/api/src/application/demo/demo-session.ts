@@ -1,10 +1,39 @@
 import { randomUUID } from 'node:crypto';
-import type { DemoAlert, DemoSnapshot, DemoTable, FocusedDetection } from '../../domain/demo/demo-types.js';
+import type { DemoAlert, DemoMode, DemoSnapshot, DemoTable, FocusedDetection } from '../../domain/demo/demo-types.js';
 import type { Detection, InferenceProvider } from '../../domain/vision/detection.js';
 import { hasRaisedHand, shouldAlertForHandRaise } from '../../domain/demo/hand-raise-rules.js';
+import { advanceTableState, effectiveUnattendedSeconds, markStaffVisit } from '../../domain/demo/table-rules.js';
 import { env } from '../../config/env.js';
 import { demoZones } from '../../config/demo-zones.js';
-import type { PostgresDemoEventRepository } from '../../infrastructure/repositories/postgres-demo-event.repository.js';
+
+/** Port for persisting demo events. Implemented by the PostgreSQL adapter; optional. */
+export interface DemoEventRecorder {
+  record(alert: DemoAlert, mode: DemoMode): Promise<void>;
+  recordStaffVisit(tableId: string, videoTimeSeconds: number, mode: DemoMode): Promise<void>;
+}
+
+export interface DemoSessionConfig {
+  maxFrames: number;
+  unattendedSeconds: number;
+  debounceSeconds: number;
+  initialMode: DemoMode;
+  inferenceMode: DemoSnapshot['inferenceMode'];
+}
+
+export function demoConfigFromEnv(): DemoSessionConfig {
+  return {
+    maxFrames: env.DEMO_MAX_FRAMES,
+    unattendedSeconds: env.DEMO_UNATTENDED_SECONDS,
+    debounceSeconds: env.DEMO_DEBOUNCE_SECONDS,
+    initialMode: env.DEMO_MODE,
+    inferenceMode: env.INFERENCE_MODE,
+  };
+}
+
+const HAND_RAISE_COOLDOWN_SECONDS = 30;
+const PERSON_MIN_OVERLAP = 0.2;
+const CHAIR_MIN_OVERLAP = 0.05;
+const MIN_CONFIDENCE = 0.25;
 
 function newTables(): DemoTable[] {
   return demoZones.map((zone) => ({
@@ -12,8 +41,10 @@ function newTables(): DemoTable[] {
     label: zone.label,
     status: 'vacant',
     seatedAt: null,
-    staffVisited: false,
+    pendingStatus: null,
+    pendingSince: null,
     unattendedAlerted: false,
+    staffVisitedAt: null,
     handRaiseSince: null,
     handRaiseCooldownUntil: 0,
     seats: [],
@@ -26,27 +57,33 @@ export class DemoSession {
   private tables = newTables();
   private alerts: DemoAlert[] = [];
   private analyzedFrames = 0;
-  private mode: 'standard' | 'iftar' = env.DEMO_MODE;
+  private mode: DemoMode;
   private lastDetections: FocusedDetection[] = [];
-  private pending = new Map<string, { status: 'vacant' | 'seated'; since: number }>();
 
   constructor(
     private readonly provider: InferenceProvider,
-    private readonly eventRepository?: PostgresDemoEventRepository,
-  ) {}
+    private readonly eventRecorder?: DemoEventRecorder,
+    private readonly config: DemoSessionConfig = demoConfigFromEnv(),
+  ) {
+    this.mode = config.initialMode;
+  }
 
   snapshot(): DemoSnapshot {
+    const active = this.alerts.filter((alert) => alert.resolvedAt === null);
     return {
       tables: this.tables.map((table) => ({
         ...table,
         seats: table.seats.map((seat) => ({ ...seat })),
         zone: table.zone.map((point) => [...point] as [number, number]),
       })),
-      alerts: this.alerts.slice(-10),
+      alerts: active.slice(-10).map((alert) => ({ ...alert })),
+      resolvedAlertCount: this.alerts.length - active.length,
       analyzedFrames: this.analyzedFrames,
-      maxFrames: env.DEMO_MAX_FRAMES,
+      maxFrames: this.config.maxFrames,
       mode: this.mode,
-      inferenceMode: env.INFERENCE_MODE,
+      unattendedSeconds: effectiveUnattendedSeconds(this.config.unattendedSeconds, this.mode),
+      debounceSeconds: this.config.debounceSeconds,
+      inferenceMode: this.config.inferenceMode,
       detections: this.lastDetections.map((item) => ({ ...item })),
     };
   }
@@ -56,163 +93,109 @@ export class DemoSession {
     this.alerts = [];
     this.analyzedFrames = 0;
     this.lastDetections = [];
-    this.pending.clear();
     return this.snapshot();
   }
 
-  setMode(mode: 'standard' | 'iftar'): DemoSnapshot {
+  setMode(mode: DemoMode): DemoSnapshot {
     this.mode = mode;
     return this.snapshot();
   }
 
   async analyzeFrame(jpegBase64: string, videoTimeSeconds: number): Promise<DemoSnapshot> {
-    if (this.analyzedFrames >= env.DEMO_MAX_FRAMES) throw new Error('Frame limit reached. Reset the demo to continue.');
+    if (this.analyzedFrames >= this.config.maxFrames) throw new Error('Frame limit reached. Reset the demo to continue.');
     const detections = await this.provider.detect(jpegBase64);
     this.analyzedFrames += 1;
     const now = Math.max(0, videoTimeSeconds);
-    const people: FocusedDetection[] = detections
-      .filter((detection) => isPerson(detection) && detection.confidence >= 0.25)
-      .map((detection) => ({ ...detection, tableId: null, seatId: null }));
-    const chairs: FocusedDetection[] = detections
-      .filter((detection) => isChair(detection) && detection.confidence >= 0.25)
-      .map((detection) => ({ ...detection, tableId: null, seatId: null }));
-    const chairsByTable = new Map<string, FocusedDetection[]>();
-    for (const chair of chairs) {
-      const zone = bestOverlappingZone(chair);
-      if (!zone) continue;
-      const tableChairs = chairsByTable.get(zone.id) ?? [];
-      tableChairs.push(chair);
-      chairsByTable.set(zone.id, tableChairs);
-    }
-    const peopleByTable = new Map<string, FocusedDetection[]>();
-    for (const detection of people) {
-      // Full person boxes often include the chair and floor, so their bottom
-      // edge can fall outside the table zone even when the guest is seated.
-      // Assign each person to the table with the greatest box overlap instead.
-      // Ignore aisle detections that only clip the edge of a table zone.
-      const zone = bestOverlappingZone(detection, 0.2);
-      if (!zone) continue;
+    const people = focus(detections.filter((d) => isPerson(d) && d.confidence >= MIN_CONFIDENCE));
+    const chairs = focus(detections.filter((d) => isChair(d) && d.confidence >= MIN_CONFIDENCE));
 
-      const tablePeople = peopleByTable.get(zone.id) ?? [];
-      tablePeople.push(detection);
-      peopleByTable.set(zone.id, tablePeople);
-    }
-    for (const table of this.tables) {
-      const tablePeople = peopleByTable.get(table.id) ?? [];
-      const tableChairs = chairsByTable.get(table.id) ?? [];
-      tableChairs.sort((a, b) => centerX(a) - centerX(b) || centerY(a) - centerY(b));
-      const personCount = tablePeople.length;
-      const emptyChairs = tableChairs.filter((chair) => !chairCenterInsidePerson(chair, tablePeople));
-      const configuredCapacity = demoZones.find((zone) => zone.id === table.id)?.seatCapacity ?? 0;
-      const inferredSeatCount = Math.max(configuredCapacity, personCount + emptyChairs.length);
+    // Full person boxes often include the chair and floor, so their bottom edge can fall outside
+    // the table zone even when the guest is seated. Assign by greatest box overlap instead, and
+    // ignore aisle detections that only clip the edge of a zone.
+    const peopleByTable = groupByZone(people, PERSON_MIN_OVERLAP);
+    const chairsByTable = groupByZone(chairs, CHAIR_MIN_OVERLAP);
+    const unattendedSeconds = effectiveUnattendedSeconds(this.config.unattendedSeconds, this.mode);
 
-      tablePeople.forEach((person, index) => {
-        person.tableId = table.id;
-        person.seatId = `seat-${index + 1}`;
-      });
-      let emptyIndex = 0;
-      for (const chair of tableChairs) {
-        const matchedPerson = tablePeople.findIndex((person) => chairCenterInsidePerson(chair, [person]));
-        chair.tableId = table.id;
-        chair.seatId = matchedPerson >= 0
-          ? `seat-${matchedPerson + 1}`
-          : `seat-${personCount + ++emptyIndex}`;
-      }
+    this.tables = this.tables.map((current) => {
+      const tablePeople = peopleByTable.get(current.id) ?? [];
+      const tableChairs = (chairsByTable.get(current.id) ?? [])
+        .sort((a, b) => centerX(a) - centerX(b) || centerY(a) - centerY(b));
+      const table = { ...current, seats: assignSeats(current.id, tablePeople, tableChairs) };
 
-      table.seats = Array.from({ length: inferredSeatCount }, (_, index) => ({
-        id: `seat-${index + 1}`,
-        occupied: index < personCount,
-      }));
-      this.applyOccupancy(table.id, table.seats.some((seat) => seat.occupied), now);
-
-      // Check hand-raise alerts
-      const handRaised = tablePeople.some(hasRaisedHand);
-      if (!handRaised) {
-        table.handRaiseSince = null;
-      } else if (table.handRaiseSince === null) {
-        table.handRaiseSince = now;
-      } else if (shouldAlertForHandRaise(now - table.handRaiseSince, now >= table.handRaiseCooldownUntil)) {
-        const alert: DemoAlert = {
-          id: randomUUID(),
-          tableId: table.id,
-          tableLabel: table.label,
-          type: 'hand_raise',
-          occurredAt: now,
-          message: `${table.label} needs assistance (Hand Raised)`,
-        };
-        this.recordAlert(alert);
-        table.handRaiseCooldownUntil = now + 30;
-        table.handRaiseSince = null;
-      }
-    }
+      const result = advanceTableState(table, tablePeople.length > 0, now, this.config.debounceSeconds, unattendedSeconds);
+      if (result.alert) this.recordAlert({ ...result.alert, id: randomUUID(), resolvedAt: null });
+      return this.applyHandRaise(result.state, tablePeople, now);
+    });
     this.lastDetections = [...people, ...[...chairsByTable.values()].flat()];
     return this.snapshot();
   }
 
   markStaffVisited(tableId: string, videoTimeSeconds: number): DemoSnapshot {
-    const table = this.tables.find((item) => item.id === tableId);
-    if (!table) throw new Error('Unknown table');
-    table.staffVisited = true;
-    table.unattendedAlerted = true;
-    if (this.eventRepository) {
-      void this.eventRepository.recordStaffVisit(tableId, videoTimeSeconds).catch(() => {});
+    const index = this.tables.findIndex((item) => item.id === tableId);
+    if (index < 0) throw new Error('Unknown table');
+    const now = Math.max(0, videoTimeSeconds);
+    this.tables[index] = { ...markStaffVisit(this.tables[index], now), unattendedAlerted: true };
+    for (const alert of this.alerts) {
+      if (alert.tableId === tableId && alert.resolvedAt === null) alert.resolvedAt = now;
     }
+    void this.eventRecorder?.recordStaffVisit(tableId, now, this.mode).catch(() => {});
     return this.snapshot();
   }
 
-  /** Reserved for the inference integration to apply structured table observations. */
-  applyOccupancy(tableId: string, occupied: boolean, videoTimeSeconds: number): DemoAlert | null {
-    const table = this.tables.find((item) => item.id === tableId);
-    if (!table) return null;
-    const nextStatus = occupied ? 'seated' : 'vacant';
-    const pending = this.pending.get(tableId);
-    if (nextStatus === table.status) {
-      this.pending.delete(tableId);
-    } else if (!pending || pending.status !== nextStatus) {
-      if (env.DEMO_DEBOUNCE_SECONDS === 0) {
-        table.status = nextStatus;
-        table.seatedAt = occupied ? videoTimeSeconds : null;
-        table.staffVisited = false;
-        table.unattendedAlerted = false;
-        this.pending.delete(tableId);
-      } else {
-        this.pending.set(tableId, { status: nextStatus, since: videoTimeSeconds });
-      }
-    } else if (videoTimeSeconds - pending.since >= env.DEMO_DEBOUNCE_SECONDS) {
-      table.status = nextStatus;
-      table.seatedAt = occupied ? videoTimeSeconds : null;
-      table.staffVisited = false;
-      table.unattendedAlerted = false;
-      this.pending.delete(tableId);
-    }
-
-    // In Iftar mode, early unattended alerts are suppressed as guests arrive early to wait for sunset.
-    const unattendedThreshold = this.mode === 'iftar' ? env.DEMO_UNATTENDED_SECONDS * 10 : env.DEMO_UNATTENDED_SECONDS;
-    const allowUnattended = this.mode !== 'iftar' || (videoTimeSeconds - (table.seatedAt ?? 0) >= unattendedThreshold);
-
-    if (table.status === 'seated' && table.seatedAt !== null && !table.staffVisited &&
-        !table.unattendedAlerted && allowUnattended && videoTimeSeconds - table.seatedAt >= unattendedThreshold) {
-      table.unattendedAlerted = true;
-      const alert: DemoAlert = {
-        id: randomUUID(),
-        tableId,
-        tableLabel: table.label,
-        type: 'unattended',
-        occurredAt: videoTimeSeconds,
-        message: `${table.label} needs service`,
-      };
-      this.recordAlert(alert);
-      return alert;
-    }
-    return null;
+  private applyHandRaise(table: DemoTable, tablePeople: Detection[], now: number): DemoTable {
+    if (!tablePeople.some(hasRaisedHand)) return { ...table, handRaiseSince: null };
+    if (table.handRaiseSince === null) return { ...table, handRaiseSince: now };
+    if (!shouldAlertForHandRaise(now - table.handRaiseSince, now >= table.handRaiseCooldownUntil)) return table;
+    this.recordAlert({
+      id: randomUUID(),
+      tableId: table.id,
+      tableLabel: table.label,
+      type: 'hand_raise',
+      occurredAt: now,
+      message: `${table.label} needs assistance (hand raised)`,
+      resolvedAt: null,
+    });
+    return { ...table, handRaiseCooldownUntil: now + HAND_RAISE_COOLDOWN_SECONDS, handRaiseSince: null };
   }
 
   private recordAlert(alert: DemoAlert): void {
     this.alerts.push(alert);
-    if (this.eventRepository) {
-      void this.eventRepository.record(alert).catch(() => {});
-    }
+    void this.eventRecorder?.record(alert, this.mode).catch(() => {});
   }
+}
+
+function focus(detections: Detection[]): FocusedDetection[] {
+  return detections.map((detection) => ({ ...detection, tableId: null, seatId: null }));
+}
+
+function groupByZone(detections: FocusedDetection[], minimumOverlap: number): Map<string, FocusedDetection[]> {
+  const grouped = new Map<string, FocusedDetection[]>();
+  for (const detection of detections) {
+    const zone = bestOverlappingZone(detection, minimumOverlap);
+    if (!zone) continue;
+    grouped.set(zone.id, [...(grouped.get(zone.id) ?? []), detection]);
+  }
+  return grouped;
+}
+
+/** Person boxes fill seats; chairs not covered by a person add vacant seats beyond the configured minimum. */
+function assignSeats(tableId: string, tablePeople: FocusedDetection[], tableChairs: FocusedDetection[]) {
+  const personCount = tablePeople.length;
+  const emptyChairs = tableChairs.filter((chair) => !chairCenterInsidePerson(chair, tablePeople));
+  const configuredCapacity = demoZones.find((zone) => zone.id === tableId)?.seatCapacity ?? 0;
+  const seatCount = Math.max(configuredCapacity, personCount + emptyChairs.length);
+
+  tablePeople.forEach((person, index) => {
+    person.tableId = tableId;
+    person.seatId = `seat-${index + 1}`;
+  });
+  let emptyIndex = 0;
+  for (const chair of tableChairs) {
+    const matched = tablePeople.findIndex((person) => chairCenterInsidePerson(chair, [person]));
+    chair.tableId = tableId;
+    chair.seatId = matched >= 0 ? `seat-${matched + 1}` : `seat-${personCount + ++emptyIndex}`;
+  }
+  return Array.from({ length: seatCount }, (_, index) => ({ id: `seat-${index + 1}`, occupied: index < personCount }));
 }
 
 function isPerson(detection: Detection): boolean {
@@ -223,7 +206,7 @@ function isChair(detection: Detection): boolean {
   return detection.label.toLowerCase() === 'chair' || detection.label === '56';
 }
 
-function bestOverlappingZone(detection: Detection, minimumOverlap = 0.05) {
+function bestOverlappingZone(detection: Detection, minimumOverlap: number) {
   return demoZones
     .map((item) => ({ item, overlap: boxPolygonOverlap(detection, item.polygon) }))
     .filter(({ overlap }) => overlap >= minimumOverlap)
@@ -244,7 +227,8 @@ function chairCenterInsidePerson(chair: Detection, people: Detection[]): boolean
   return people.some((person) => x >= person.x1 && x <= person.x2 && y >= person.y1 && y <= person.y2);
 }
 
-function boxPolygonOverlap(detection: Detection, polygon: Array<[number, number]>): number {
+/** Share of the detection box that falls inside the zone's bounding rectangle. */
+export function boxPolygonOverlap(detection: Detection, polygon: Array<[number, number]>): number {
   const minX = Math.min(...polygon.map(([x]) => x));
   const maxX = Math.max(...polygon.map(([x]) => x));
   const minY = Math.min(...polygon.map(([, y]) => y));

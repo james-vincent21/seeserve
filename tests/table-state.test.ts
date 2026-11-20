@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceTableState, markStaffVisit } from '../apps/api/src/domain/demo/table-rules.js';
-import type { DemoTableState } from '../apps/api/src/domain/demo/demo-session.js';
+import type { TableRuleState } from '../apps/api/src/domain/demo/demo-types.js';
 
-function createInitialState(): DemoTableState {
+function createInitialState(): TableRuleState {
   return {
     id: 'table-1',
     label: 'Table 1',
@@ -13,8 +13,6 @@ function createInitialState(): DemoTableState {
     pendingSince: null,
     unattendedAlerted: false,
     staffVisitedAt: null,
-    handRaiseSince: null,
-    handRaiseCooldownUntil: 0,
   };
 }
 

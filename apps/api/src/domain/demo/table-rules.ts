@@ -1,34 +1,40 @@
-import type { DemoAlert, DemoTableState } from './demo-session.js';
+import type { DemoAlert, TableRuleState } from './demo-types.js';
 
-export interface TableRuleResult {
-  state: DemoTableState;
-  alert: Omit<DemoAlert, 'id'> | null;
+export interface TableRuleResult<T extends TableRuleState> {
+  state: T;
+  alert: Omit<DemoAlert, 'id' | 'resolvedAt'> | null;
 }
 
-/** Pure table-state rule. All time values are clip-relative seconds. */
-export function advanceTableState(
-  current: DemoTableState,
+/**
+ * Pure table-state rule with debounce hysteresis. All time values are clip-relative seconds.
+ * A status change must persist for `debounceSeconds` before it is applied; 0 applies it at once.
+ */
+export function advanceTableState<T extends TableRuleState>(
+  current: T,
   occupied: boolean,
   now: number,
   debounceSeconds: number,
   unattendedSeconds: number,
-): TableRuleResult {
+): TableRuleResult<T> {
   const state = { ...current };
   const nextStatus = occupied ? 'seated' : 'vacant';
 
   if (nextStatus === state.status) {
     state.pendingStatus = null;
     state.pendingSince = null;
-  } else if (state.pendingStatus !== nextStatus) {
-    state.pendingStatus = nextStatus;
-    state.pendingSince = now;
-  } else if (state.pendingSince !== null && now - state.pendingSince >= debounceSeconds) {
-    state.status = nextStatus;
-    state.pendingStatus = null;
-    state.pendingSince = null;
-    state.seatedAt = nextStatus === 'seated' ? now : null;
-    state.unattendedAlerted = false;
-    state.staffVisitedAt = null;
+  } else {
+    if (state.pendingStatus !== nextStatus) {
+      state.pendingStatus = nextStatus;
+      state.pendingSince = now;
+    }
+    if (state.pendingSince !== null && now - state.pendingSince >= debounceSeconds) {
+      state.status = nextStatus;
+      state.pendingStatus = null;
+      state.pendingSince = null;
+      state.seatedAt = nextStatus === 'seated' ? now : null;
+      state.unattendedAlerted = false;
+      state.staffVisitedAt = null;
+    }
   }
 
   const hasStaffVisitSinceSeating = state.staffVisitedAt !== null && state.seatedAt !== null &&
@@ -51,6 +57,11 @@ export function advanceTableState(
   };
 }
 
-export function markStaffVisit(current: DemoTableState, videoTimeSeconds: number): DemoTableState {
+export function markStaffVisit<T extends TableRuleState>(current: T, videoTimeSeconds: number): T {
   return { ...current, staffVisitedAt: videoTimeSeconds };
+}
+
+/** Iftar guests arrive early and wait for sunset, so unattended alerts wait ten times longer. */
+export function effectiveUnattendedSeconds(baseSeconds: number, mode: 'standard' | 'iftar'): number {
+  return mode === 'iftar' ? baseSeconds * 10 : baseSeconds;
 }

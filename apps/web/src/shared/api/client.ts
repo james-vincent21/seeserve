@@ -28,14 +28,19 @@ export interface DemoAlertView {
   type: 'unattended' | 'hand_raise';
   occurredAt: number;
   message: string;
+  resolvedAt: number | null;
 }
 
 export interface DemoSnapshot {
   tables: TableView[];
+  /** Active (unresolved) alerts only. */
   alerts: DemoAlertView[];
+  resolvedAlertCount: number;
   analyzedFrames: number;
   maxFrames: number;
   mode: 'standard' | 'iftar';
+  unattendedSeconds: number;
+  debounceSeconds: number;
   inferenceMode: string;
   detections: FocusedDetectionView[];
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'reac
 import { analyzeFrame, getDemoState, registerStaffVisit, resetDemo, setDemoMode, type DemoSnapshot } from '@/shared/api/client';
 import styles from './dashboard.module.css';
 
-const FRAME_INTERVAL_MS = Number(process.env.NEXT_PUBLIC_DEMO_FRAME_INTERVAL_MS ?? 3500);
+const FRAME_INTERVAL_MS = Number(process.env.NEXT_PUBLIC_DEMO_FRAME_INTERVAL_MS ?? 3000);
 const MAX_FRAME_WIDTH = 640;
 
 /**
@@ -240,7 +240,7 @@ export function Dashboard() {
           <div className={styles.topActions}>
             <button className={styles.modeToggle} onClick={() => void toggleMode()} title="Toggle Standard vs Iftar mode">
               <span>{snapshot?.mode === 'iftar' ? '🌙 IFTAR MODE' : '☀️ STANDARD MODE'}</span>
-              <small>{snapshot?.mode === 'iftar' ? 'Early alerts suppressed' : '90s threshold'}</small>
+              <small>{snapshot ? `${snapshot.unattendedSeconds}s unattended threshold${snapshot.mode === 'iftar' ? ' · early alerts suppressed' : ''}` : 'Loading…'}</small>
             </button>
             <span className={styles.connection}><i /> LOCAL SESSION</span>
             <button className={styles.topIcon} aria-label="Notifications"><Icon name="bell" /></button>
@@ -396,7 +396,7 @@ export function Dashboard() {
                   </div>
                 )}
                 <div className={styles.alertFoot}>
-                  <span><i /> {alerts.length} ALERTS RECORDED</span>
+                  <span><i /> {alerts.length} ACTIVE · {snapshot?.resolvedAlertCount ?? 0} RESOLVED</span>
                   <button title="Live alert dispatching active">
                     <Icon name="spark" />
                     <span>Active monitor</span>
