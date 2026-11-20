@@ -4,15 +4,32 @@ import { DemoSession } from '../../../application/demo/demo-session.js';
 import { env } from '../../../config/env.js';
 import { MockInferenceProvider } from '../../../infrastructure/inference/mock.provider.js';
 import { UltralyticsApiProvider } from '../../../infrastructure/inference/ultralytics-api.provider.js';
+import { YoloV8HttpProvider } from '../../../infrastructure/inference/yolov8-http.provider.js';
+import { PostgresDemoEventRepository } from '../../../infrastructure/repositories/postgres-demo-event.repository.js';
+import { pool } from '../../../infrastructure/database/pool.js';
 
-const provider = env.INFERENCE_MODE === 'ultralytics' ? new UltralyticsApiProvider() : new MockInferenceProvider();
-const demoSession = new DemoSession(provider);
+function createProvider() {
+  switch (env.INFERENCE_MODE) {
+    case 'ultralytics':
+      return new UltralyticsApiProvider();
+    case 'http':
+      return new YoloV8HttpProvider();
+    case 'mock':
+    default:
+      return new MockInferenceProvider();
+  }
+}
+
+const provider = createProvider();
+const eventRepository = new PostgresDemoEventRepository(pool);
+const demoSession = new DemoSession(provider, eventRepository);
 
 const frameSchema = z.object({
   image: z.string().min(100).max(3_000_000),
   videoTimeSeconds: z.number().finite().nonnegative(),
 });
 const staffVisitSchema = z.object({ videoTimeSeconds: z.number().finite().nonnegative() });
+const modeSchema = z.object({ mode: z.enum(['standard', 'iftar']) });
 
 export function getDemoStateController(_req: Request, res: Response): void {
   res.json({ data: demoSession.snapshot() });
@@ -20,6 +37,15 @@ export function getDemoStateController(_req: Request, res: Response): void {
 
 export function resetDemoController(_req: Request, res: Response): void {
   res.json({ data: demoSession.reset() });
+}
+
+export function setModeController(req: Request, res: Response): void {
+  const parsed = modeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid mode request', details: parsed.error.flatten() });
+    return;
+  }
+  res.json({ data: demoSession.setMode(parsed.data.mode) });
 }
 
 export async function analyzeFrameController(req: Request, res: Response): Promise<void> {

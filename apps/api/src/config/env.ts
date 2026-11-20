@@ -14,6 +14,7 @@ const envSchema = z.object({
   ULTRALYTICS_MODEL_OWNER: z.string().default('ultralytics'),
   ULTRALYTICS_MODEL_PROJECT: z.string().default('yolov8'),
   ULTRALYTICS_MODEL_NAME: z.string().default('yolov8n'),
+  DEMO_MODE: z.enum(['standard', 'iftar']).default('standard'),
   DEMO_MAX_FRAMES: z.coerce.number().int().positive().default(100),
   DEMO_UNATTENDED_SECONDS: z.coerce.number().positive().default(90),
   DEMO_DEBOUNCE_SECONDS: z.coerce.number().nonnegative().default(2),

@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { DemoAlert, DemoSnapshot, DemoTable, FocusedDetection } from '../../domain/demo/demo-types.js';
 import type { Detection, InferenceProvider } from '../../domain/vision/detection.js';
+import { hasRaisedHand, shouldAlertForHandRaise } from '../../domain/demo/hand-raise-rules.js';
 import { env } from '../../config/env.js';
 import { demoZones } from '../../config/demo-zones.js';
+import type { PostgresDemoEventRepository } from '../../infrastructure/repositories/postgres-demo-event.repository.js';
 
 function newTables(): DemoTable[] {
   return demoZones.map((zone) => ({
@@ -12,6 +14,8 @@ function newTables(): DemoTable[] {
     seatedAt: null,
     staffVisited: false,
     unattendedAlerted: false,
+    handRaiseSince: null,
+    handRaiseCooldownUntil: 0,
     seats: [],
     zone: zone.polygon.map((point) => [...point] as [number, number]),
   }));
@@ -22,8 +26,14 @@ export class DemoSession {
   private tables = newTables();
   private alerts: DemoAlert[] = [];
   private analyzedFrames = 0;
+  private mode: 'standard' | 'iftar' = env.DEMO_MODE;
   private lastDetections: FocusedDetection[] = [];
-  constructor(private readonly provider: InferenceProvider) {}
+  private pending = new Map<string, { status: 'vacant' | 'seated'; since: number }>();
+
+  constructor(
+    private readonly provider: InferenceProvider,
+    private readonly eventRepository?: PostgresDemoEventRepository,
+  ) {}
 
   snapshot(): DemoSnapshot {
     return {
@@ -35,6 +45,7 @@ export class DemoSession {
       alerts: this.alerts.slice(-10),
       analyzedFrames: this.analyzedFrames,
       maxFrames: env.DEMO_MAX_FRAMES,
+      mode: this.mode,
       inferenceMode: env.INFERENCE_MODE,
       detections: this.lastDetections.map((item) => ({ ...item })),
     };
@@ -46,6 +57,11 @@ export class DemoSession {
     this.analyzedFrames = 0;
     this.lastDetections = [];
     this.pending.clear();
+    return this.snapshot();
+  }
+
+  setMode(mode: 'standard' | 'iftar'): DemoSnapshot {
+    this.mode = mode;
     return this.snapshot();
   }
 
@@ -108,6 +124,26 @@ export class DemoSession {
         occupied: index < personCount,
       }));
       this.applyOccupancy(table.id, table.seats.some((seat) => seat.occupied), now);
+
+      // Check hand-raise alerts
+      const handRaised = tablePeople.some(hasRaisedHand);
+      if (!handRaised) {
+        table.handRaiseSince = null;
+      } else if (table.handRaiseSince === null) {
+        table.handRaiseSince = now;
+      } else if (shouldAlertForHandRaise(now - table.handRaiseSince, now >= table.handRaiseCooldownUntil)) {
+        const alert: DemoAlert = {
+          id: randomUUID(),
+          tableId: table.id,
+          tableLabel: table.label,
+          type: 'hand_raise',
+          occurredAt: now,
+          message: `${table.label} needs assistance (Hand Raised)`,
+        };
+        this.recordAlert(alert);
+        table.handRaiseCooldownUntil = now + 30;
+        table.handRaiseSince = null;
+      }
     }
     this.lastDetections = [...people, ...[...chairsByTable.values()].flat()];
     return this.snapshot();
@@ -118,7 +154,9 @@ export class DemoSession {
     if (!table) throw new Error('Unknown table');
     table.staffVisited = true;
     table.unattendedAlerted = true;
-    void videoTimeSeconds;
+    if (this.eventRepository) {
+      void this.eventRepository.recordStaffVisit(tableId, videoTimeSeconds).catch(() => {});
+    }
     return this.snapshot();
   }
 
@@ -148,20 +186,33 @@ export class DemoSession {
       this.pending.delete(tableId);
     }
 
+    // In Iftar mode, early unattended alerts are suppressed as guests arrive early to wait for sunset.
+    const unattendedThreshold = this.mode === 'iftar' ? env.DEMO_UNATTENDED_SECONDS * 10 : env.DEMO_UNATTENDED_SECONDS;
+    const allowUnattended = this.mode !== 'iftar' || (videoTimeSeconds - (table.seatedAt ?? 0) >= unattendedThreshold);
+
     if (table.status === 'seated' && table.seatedAt !== null && !table.staffVisited &&
-        !table.unattendedAlerted && videoTimeSeconds - table.seatedAt >= env.DEMO_UNATTENDED_SECONDS) {
+        !table.unattendedAlerted && allowUnattended && videoTimeSeconds - table.seatedAt >= unattendedThreshold) {
       table.unattendedAlerted = true;
       const alert: DemoAlert = {
-        id: randomUUID(), tableId, tableLabel: table.label, type: 'unattended',
-        occurredAt: videoTimeSeconds, message: `${table.label} needs service`,
+        id: randomUUID(),
+        tableId,
+        tableLabel: table.label,
+        type: 'unattended',
+        occurredAt: videoTimeSeconds,
+        message: `${table.label} needs service`,
       };
-      this.alerts.push(alert);
+      this.recordAlert(alert);
       return alert;
     }
     return null;
   }
 
-  private pending = new Map<string, { status: 'vacant' | 'seated'; since: number }>();
+  private recordAlert(alert: DemoAlert): void {
+    this.alerts.push(alert);
+    if (this.eventRepository) {
+      void this.eventRepository.record(alert).catch(() => {});
+    }
+  }
 }
 
 function isPerson(detection: Detection): boolean {
@@ -203,4 +254,3 @@ function boxPolygonOverlap(detection: Detection, polygon: Array<[number, number]
   const boxArea = Math.max(0, detection.x2 - detection.x1) * Math.max(0, detection.y2 - detection.y1);
   return boxArea > 0 ? (width * height) / boxArea : 0;
 }
-

@@ -8,6 +8,8 @@ export interface DemoTable {
   seatedAt: number | null;
   staffVisited: boolean;
   unattendedAlerted: boolean;
+  handRaiseSince: number | null;
+  handRaiseCooldownUntil: number;
   seats: DemoSeat[];
   zone: Array<[number, number]>;
 }
@@ -36,6 +38,7 @@ export interface DemoSnapshot {
   alerts: DemoAlert[];
   analyzedFrames: number;
   maxFrames: number;
-  inferenceMode: 'mock' | 'ultralytics';
+  mode: 'standard' | 'iftar';
+  inferenceMode: 'mock' | 'ultralytics' | 'http';
   detections: FocusedDetection[];
 }

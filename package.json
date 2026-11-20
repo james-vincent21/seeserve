@@ -7,6 +7,9 @@
     "dev": "concurrently -k -n api,web -c blue,green \"npm run dev -w @restaurant-vision/api\" \"npm run dev -w @restaurant-vision/web\"",
     "dev:api": "npm run dev -w @restaurant-vision/api",
     "dev:web": "npm run dev -w @restaurant-vision/web",
+    "build": "npm run build -w @restaurant-vision/api && npm run build -w @restaurant-vision/web",
+    "test": "tsx --test tests/**/*.test.ts",
+    "check:privacy": "tsx tools/check-no-footage.ts",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:logs": "docker compose logs -f postgres"

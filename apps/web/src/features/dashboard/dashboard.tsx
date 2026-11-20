@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { analyzeFrame, getDemoState, registerStaffVisit, resetDemo, type DemoSnapshot } from '@/shared/api/client';
+import { analyzeFrame, getDemoState, registerStaffVisit, resetDemo, setDemoMode, type DemoSnapshot } from '@/shared/api/client';
 import styles from './dashboard.module.css';
 
 const FRAME_INTERVAL_MS = Number(process.env.NEXT_PUBLIC_DEMO_FRAME_INTERVAL_MS ?? 3500);
@@ -187,7 +187,18 @@ export function Dashboard() {
     }
   };
 
+  const toggleMode = async () => {
+    const nextMode = snapshot?.mode === 'iftar' ? 'standard' : 'iftar';
+    try {
+      setSnapshot(await setDemoMode(nextMode));
+      setError('');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not change demo mode');
+    }
+  };
+
   const tables = snapshot?.tables ?? [];
+  const alerts = snapshot?.alerts ?? [];
   const occupiedCount = tables.reduce((sum, table) => sum + table.seats.filter((seat) => seat.occupied).length, 0);
   const totalSeats = tables.reduce((sum, table) => sum + table.seats.length, 0);
   const engineLabel = snapshot?.inferenceMode === 'ultralytics' ? 'YOLOv8 public model' : 'Preview engine';
@@ -205,6 +216,7 @@ export function Dashboard() {
           <a className={`${styles.navItem} ${styles.navActive}`} href="#overview"><Icon name="grid"/><span>Overview</span><i /></a>
           <a className={styles.navItem} href="#video"><Icon name="video"/><span>Demo video</span></a>
           <a className={styles.navItem} href="#seats"><Icon name="grid"/><span>Seat map</span></a>
+          <a className={styles.navItem} href="#alerts"><Icon name="bell"/><span>Alerts</span>{alerts.length > 0 && <span className={styles.navAlertBadge}>{alerts.length}</span>}</a>
         </nav>
 
         <div className={styles.sidebarBottom}>
@@ -226,6 +238,10 @@ export function Dashboard() {
         <header className={styles.topbar}>
           <div className={styles.breadcrumb}>WORKSPACE <span>/</span> <strong>OVERVIEW</strong></div>
           <div className={styles.topActions}>
+            <button className={styles.modeToggle} onClick={() => void toggleMode()} title="Toggle Standard vs Iftar mode">
+              <span>{snapshot?.mode === 'iftar' ? '🌙 IFTAR MODE' : '☀️ STANDARD MODE'}</span>
+              <small>{snapshot?.mode === 'iftar' ? 'Early alerts suppressed' : '90s threshold'}</small>
+            </button>
             <span className={styles.connection}><i /> LOCAL SESSION</span>
             <button className={styles.topIcon} aria-label="Notifications"><Icon name="bell" /></button>
             <div className={styles.dateStamp}>DEMO BUILD <span>01</span></div>
@@ -325,30 +341,69 @@ export function Dashboard() {
               </div>
             </section>
 
-            <section className={styles.seatsCard} id="seats">
-              <div className={styles.cardHeader}>
-                <div><span className={styles.sectionIndex}>02 / FLOOR PLAN</span><h2>Table overview</h2></div>
-                <div className={styles.legend}><span><i className={styles.legendVacant}/> VACANT</span><span><i className={styles.legendSeated}/> SEATED</span><span><i className={styles.legendOther}/> OTHER</span></div>
-              </div>
-              {tables.length ? <div className={styles.seatsList}>{tables.map((table, index) => <article className={`${styles.seatTile} ${styles[`tile_${table.status}`]}`} key={table.id}>
-                <div className={styles.tableTileTop}><span className={styles.tableNumber}>T{String(index + 1).padStart(2, '0')}</span><span className={styles.tableState}><i />{table.status}</span></div>
-                <div className={styles.tableTileBottom}>
-                  <div>
-                    <strong>{table.label}</strong>
-                    <small>{table.seats.length} chairs · {table.seats.filter((seat) => seat.occupied).length} occupied</small>
-                    <div className={styles.seatIndicators} aria-label={`${table.seats.filter((seat) => seat.occupied).length} of ${table.seats.length} seats occupied`}>
-                      {table.seats.map((seat, seatIndex) => <i
-                        key={seat.id}
-                        className={seat.occupied ? styles.seatOccupied : ''}
-                        title={`Seat ${seatIndex + 1}: ${seat.occupied ? 'occupied' : 'vacant'}`}
-                      />)}
-                    </div>
-                  </div>
-                  {table.status === 'seated' && <button title="Acknowledge staff visit" onClick={() => void staffVisited(table.id)}>Attended</button>}
+            <div className={styles.sideColumn}>
+              <section className={styles.seatsCard} id="seats">
+                <div className={styles.cardHeader}>
+                  <div><span className={styles.sectionIndex}>02 / FLOOR PLAN</span><h2>Table overview</h2></div>
+                  <div className={styles.legend}><span><i className={styles.legendVacant}/> VACANT</span><span><i className={styles.legendSeated}/> SEATED</span><span><i className={styles.legendOther}/> OTHER</span></div>
                 </div>
-              </article>)}</div> : <div className={styles.seatTilesLoading}><span/><span/><span/><span/></div>}
-              <div className={styles.seatsFoot}><span><i /> {tables.length} zones configured</span><span>{occupiedCount} / {totalSeats} seats occupied</span></div>
-            </section>
+                {tables.length ? <div className={styles.seatsList}>{tables.map((table, index) => <article className={`${styles.seatTile} ${styles[`tile_${table.status}`]}`} key={table.id}>
+                  <div className={styles.tableTileTop}><span className={styles.tableNumber}>T{String(index + 1).padStart(2, '0')}</span><span className={styles.tableState}><i />{table.status}</span></div>
+                  <div className={styles.tableTileBottom}>
+                    <div>
+                      <strong>{table.label}</strong>
+                      <small>{table.seats.length} chairs · {table.seats.filter((seat) => seat.occupied).length} occupied</small>
+                      <div className={styles.seatIndicators} aria-label={`${table.seats.filter((seat) => seat.occupied).length} of ${table.seats.length} seats occupied`}>
+                        {table.seats.map((seat, seatIndex) => <i
+                          key={seat.id}
+                          className={seat.occupied ? styles.seatOccupied : ''}
+                          title={`Seat ${seatIndex + 1}: ${seat.occupied ? 'occupied' : 'vacant'}`}
+                        />)}
+                      </div>
+                    </div>
+                    {table.status === 'seated' && <button title="Acknowledge staff visit" onClick={() => void staffVisited(table.id)}>Attended</button>}
+                  </div>
+                </article>)}</div> : <div className={styles.seatTilesLoading}><span/><span/><span/><span/></div>}
+                <div className={styles.seatsFoot}><span><i /> {tables.length} zones configured</span><span>{occupiedCount} / {totalSeats} seats occupied</span></div>
+              </section>
+
+              <section className={styles.alertCard} id="alerts">
+                <div className={styles.cardHeader}>
+                  <div><span className={styles.sectionIndex}>03 / ALERTS</span><h2>Active alerts</h2></div>
+                  <div className={styles.alertCount}>{alerts.length}</div>
+                </div>
+                {alerts.length ? (
+                  <ul className={styles.alertList}>
+                    {[...alerts].reverse().map((alert) => (
+                      <li key={alert.id}>
+                        <span className={`${styles.alertSymbol} ${alert.type === 'hand_raise' ? styles.handAlert : ''}`}>
+                          {alert.type === 'hand_raise' ? '✋' : '!'}
+                        </span>
+                        <div className={styles.alertBody}>
+                          <span className={styles.alertType}>{alert.type.replace('_', ' ')}</span>
+                          <strong>{alert.message}</strong>
+                          <small>Video @ {formatDuration(alert.occurredAt)}</small>
+                        </div>
+                        <Icon name="arrow" />
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className={styles.emptyAlerts}>
+                    <div className={styles.alertOrbit}><Icon name="bell" /></div>
+                    <strong>All tables serviced</strong>
+                    <p>No active alerts. Unattended guests and service calls appear here in real time.</p>
+                  </div>
+                )}
+                <div className={styles.alertFoot}>
+                  <span><i /> {alerts.length} ALERTS RECORDED</span>
+                  <button title="Live alert dispatching active">
+                    <Icon name="spark" />
+                    <span>Active monitor</span>
+                  </button>
+                </div>
+              </section>
+            </div>
           </div>
 
           <footer className={styles.footer}><span>SEESERVE <i>×</i> SERVICE, MADE VISIBLE</span><span>LOCAL DEMO ENVIRONMENT <b>·</b> NO LOCAL FRAME STORAGE</span></footer>

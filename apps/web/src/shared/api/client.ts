@@ -35,6 +35,7 @@ export interface DemoSnapshot {
   alerts: DemoAlertView[];
   analyzedFrames: number;
   maxFrames: number;
+  mode: 'standard' | 'iftar';
   inferenceMode: string;
   detections: FocusedDetectionView[];
 }
@@ -52,6 +53,15 @@ export async function getDemoState(): Promise<DemoSnapshot> {
 
 export async function resetDemo(): Promise<DemoSnapshot> {
   const response = await fetch(`${API_URL}/demo/reset`, { method: 'POST' });
+  return readSnapshot(response);
+}
+
+export async function setDemoMode(mode: 'standard' | 'iftar'): Promise<DemoSnapshot> {
+  const response = await fetch(`${API_URL}/demo/mode`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  });
   return readSnapshot(response);
 }
 

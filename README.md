@@ -10,9 +10,18 @@ AI computer vision platform that turns a restaurant's existing CCTV into a real-
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Built for](https://img.shields.io/badge/built%20for-AI%20Builders%20Congress%202026-purple)
 
-[Demo](#demo) · [Features](#features) · [Architecture](#architecture) · [Getting Started](#getting-started) · [Roadmap](#roadmap)
+[Demo](#demo) · [Features](#features) · [AI-Native Architecture](docs/AI-NATIVE-BUILD.md) · [Data Lifecycle & Privacy](docs/DATA-LIFECYCLE.md) · [Getting Started](#getting-started) · [Audit](#privacy-audit)
 
 </div>
+
+## Key Architectural & Compliance Documentation
+
+For in-depth technical breakdowns created for the **AI Builders Congress 2026** evaluation:
+- 🧠 **[AI-Native Build Architecture](docs/AI-NATIVE-BUILD.md)**: Deep dive into decoupled edge-to-model inference, pluggable `InferenceProvider` contracts, spatial geometric overlap calculations (`boxPolygonOverlap`), dynamic chair containment heuristics, human pose keypoint recognition, and cultural state adaptation (Standard vs. Iftar Mode).
+- 🛡️ **[Data Lifecycle & Zero-Footage Privacy](docs/DATA-LIFECYCLE.md)**: Comprehensive 6-stage lifecycle specification detailing the transient transformation of video signals into anonymous numeric coordinates, the Zero-Footage Guarantee, GDPR/CCPA compliance, and automated audit enforcement.
+- 📋 **[MVP Node.js Build Specification](docs/MVP-node-api.md)**: Initial MVP brief, stack definition, and implementation scope.
+
+---
 
 ## Requirements
 
@@ -53,6 +62,26 @@ The default model is the public Ultralytics `ultralytics/yolov8/yolov8n` model v
 
 The demo layout targets the supplied clip and has three table zones ordered left-to-right. The configured minimum capacities are 4, 5, and 4 seats; person boxes determine occupied seats, while chair boxes outside person boxes add vacant seats. Adjust the zone polygons and minimum capacities in `apps/api/src/config/demo-zones.ts` if the camera framing or clip changes. YOLOv8n returns person boxes, not pose keypoints, so hand-raise alerts need a pose model and are not active with this default model.
 
-## Scope for the first demo
+## Testing and Privacy Audit
 
-Recorded clip playback, configured table zones, Vacant/Seated state, unattended alert, hand-raise alert, and dashboard status. Defer live camera/RTSP, Iftar mode, tableware inference, wait-time prediction, authentication and multi-tenant support until the core demo works.
+```bash
+# Run automated domain logic, spatial inference, and mode unit tests
+npm test
+
+# Run the automated Zero-Footage privacy compliance audit
+npm run check:privacy
+
+# Production build check for all workspaces
+npm run build
+```
+
+## Scope for the hackathon MVP
+
+- Recorded clip playback with hardware-accelerated in-browser decoding.
+- Configured dining table zones with dynamic capacity inference.
+- Vacant vs. Seated table state machine with debounce hysteresis.
+- Unattended guest alerts with staff visit resolution loop.
+- Human pose gesture recognition (sustained hand raise).
+- Context-aware operational modes (Standard Mode vs. Iftar Mode).
+- Real-time active alerts feed on the floor dashboard.
+- Zero-footage privacy guarantee enforced via continuous automated audits.
