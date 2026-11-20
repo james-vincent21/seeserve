@@ -7,7 +7,6 @@
 AI computer vision platform that turns a restaurant's existing CCTV into a real-time floor management system. No new hardware required.
 
 ![Status](https://img.shields.io/badge/status-hackathon%20MVP-orange)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Built for](https://img.shields.io/badge/built%20for-AI%20Builders%20Congress%202026-purple)
 
