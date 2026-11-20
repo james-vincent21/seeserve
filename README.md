@@ -1,6 +1,19 @@
-# Restaurant Vision MVP
+<div align="center">
 
-Organized TypeScript monorepo: Next.js dashboard, Express API, and PostgreSQL in Docker. The demo input is a staged recorded clip; inference is designed to run through a hosted model API. Business rules live in the API domain/application layers, not in React components or route handlers.
+# SeeServe
+
+### See the need, serve the guest.
+
+AI computer vision platform that turns a restaurant's existing CCTV into a real-time floor management system. No new hardware required.
+
+![Status](https://img.shields.io/badge/status-hackathon%20MVP-orange)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Built for](https://img.shields.io/badge/built%20for-AI%20Builders%20Congress%202026-purple)
+
+[Demo](#demo) · [Features](#features) · [Architecture](#architecture) · [Getting Started](#getting-started) · [Roadmap](#roadmap)
+
+</div>
 
 ## Requirements
 
