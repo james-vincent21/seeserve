@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "db:migrate": "tsx src/cli/migrate.ts",
-    "db:seed": "tsx src/cli/seed.ts"
+    "db:seed": "tsx src/cli/seed.ts",
+    "mcp": "tsx src/cli/mcp-stdio.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

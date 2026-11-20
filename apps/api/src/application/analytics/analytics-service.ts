@@ -51,16 +51,35 @@ export class AnalyticsService {
     };
   }
 
+  /**
+   * Rain vs demand. Each day's covers are compared with the same branch's average for that weekday,
+   * so branch size and the weekly cycle do not hide (or fake) a weather effect.
+   */
   async weatherCorrelation(filter: PeriodFilter) {
     const rows = await this.store.weatherJoined(filter);
-    const rainy = rows.filter((row) => row.precipitationMm > 1);
-    const dry = rows.filter((row) => row.precipitationMm <= 1);
+    const baselineKey = (row: (typeof rows)[number]) => `${row.branchId}|${new Date(`${row.day}T00:00:00Z`).getUTCDay()}`;
+    const baselines = new Map<string, { sum: number; count: number }>();
+    for (const row of rows) {
+      const entry = baselines.get(baselineKey(row)) ?? { sum: 0, count: 0 };
+      baselines.set(baselineKey(row), { sum: entry.sum + row.covers, count: entry.count + 1 });
+    }
+    const relative = rows.map((row) => {
+      const baseline = baselines.get(baselineKey(row))!;
+      const mean = baseline.sum / baseline.count;
+      return { ...row, change: mean ? row.covers / mean - 1 : 0 };
+    });
+    const rainy = relative.filter((row) => row.precipitationMm > 1);
+    const dry = relative.filter((row) => row.precipitationMm <= 1);
     const average = (list: typeof rows) => (list.length ? Math.round(list.reduce((sum, row) => sum + row.covers, 0) / list.length) : null);
-    const correlation = pearson(rows.map((row) => row.precipitationMm), rows.map((row) => row.covers));
+    const meanChange = (list: typeof relative) => (list.length ? Math.round((list.reduce((sum, row) => sum + row.change, 0) / list.length) * 1000) / 10 : null);
+    const correlation = pearson(relative.map((row) => row.precipitationMm), relative.map((row) => row.change));
     return {
       days: filter.days,
       observations: rows.length,
       correlationRainVsCovers: correlation === null ? null : Math.round(correlation * 100) / 100,
+      method: 'Pearson r between daily rainfall and covers relative to the same branch-and-weekday average.',
+      rainyDayCoverChangePct: meanChange(rainy),
+      dryDayCoverChangePct: meanChange(dry),
       avgCoversRainyDay: average(rainy),
       avgCoversDryDay: average(dry),
       rainyDays: rainy.length,

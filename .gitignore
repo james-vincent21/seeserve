@@ -7,7 +7,6 @@ coverage/
 !.env.example
 *.log
 data/
-AGENTS.md
 
 # Personal workspace: local-only notes, plans and session data (never pushed)
 Hasan/H_local/

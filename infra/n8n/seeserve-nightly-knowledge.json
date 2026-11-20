@@ -1,0 +1,33 @@
+{
+  "name": "SeeServe · nightly knowledge refresh",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "30 23 * * *" }] }
+      },
+      "name": "Every night 23:30 (Dhaka)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SEESERVE_API_URL }}/api/v1/staff/knowledge/rebuild",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "Authorization", "value": "=Bearer {{ $env.SEESERVE_MCP_TOKEN }}" }] },
+        "options": { "timeout": 300000 }
+      },
+      "name": "Rebuild retrieval corpus",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0],
+      "notes": "Re-ingests the menu, policies and the latest daily sales logs so the owner assistant can search yesterday's results."
+    }
+  ],
+  "connections": {
+    "Every night 23:30 (Dhaka)": { "main": [[{ "node": "Rebuild retrieval corpus", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "Asia/Dhaka", "saveDataSuccessExecution": "none" },
+  "active": false
+}

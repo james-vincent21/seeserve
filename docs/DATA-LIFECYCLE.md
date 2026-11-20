@@ -32,7 +32,7 @@ flowchart TD
     end
 
     subgraph Stage3["Stage 3: Stateless Transport & Inference"]
-        C -->|"HTTPS / TLS 1.3 POST"| D["Express API Router\n(/api/demo/analyze-frame)"]
+        C -->|"HTTPS POST (plain HTTP on localhost)"| D["Express API Router\n(/api/demo/analyze-frame)"]
         D -->|"In-Memory Multipart Stream"| E["Inference Provider\n(Ultralytics YOLOv8 / Pose)"]
     end
 
@@ -69,7 +69,7 @@ flowchart TD
 ### Stage 3: Stateless In-Memory Transport
 - **Payload**: The sampled frame is transmitted via HTTPS POST to `apps/api/src/interfaces/http/controllers/demo.controller.ts`.
 - **Stateless Handling**: The Express backend loads the payload directly into an in-memory `Buffer`. No file descriptors are opened; no temporary files (`/tmp` or `%TEMP%`) are created on disk.
-- **Provider Uplink**: Sent over an encrypted TLS 1.3 stream to the configured `InferenceProvider`.
+- **Provider Uplink**: Sent over HTTPS to the configured `InferenceProvider` (the Ultralytics endpoint is HTTPS-only).
 
 ### Stage 4: Perceptual Distillation & Immediate Pixel Destruction
 - **The Transformation Boundary**: This is where pixel representations cease to exist.
@@ -91,7 +91,7 @@ flowchart TD
 ### Stage 6: Metadata Persistence & Notification
 - Only anonymous, aggregated operational metrics are persisted to the relational database (`PostgreSQL`):
   ```sql
-  INSERT INTO demo_events (table_id, event_type, video_time_seconds, created_at)
+  INSERT INTO table_events (table_id, event_type, video_time_seconds, created_at)
   VALUES ('table-1', 'unattended_alert', 25.4, NOW());
   ```
 - **Zero Identity Storage**: No patron identifiers, no facial vectors, no demographic estimates, and no clothing color descriptors are stored.
@@ -107,7 +107,7 @@ flowchart TD
 | **Bounding Boxes** | 4-element float tuple | Server RAM (`FocusedDetection`) | Kept until next sampled frame ($3\text{s}$) | **None** (Anonymous geometry) |
 | **Pose Keypoints** | 17-point coordinate array | Server RAM (`Keypoint[]`) | Transient gesture check ($1.5\text{s}$) | **None** (Abstract skeletal coordinates) |
 | **Table Status** | String enum (`vacant`/`seated`) | Server RAM + PostgreSQL | Active demo session / Historical metrics | **Low** (Operational table metrics) |
-| **Alert Logs** | Event record (table, timestamp) | PostgreSQL (`demo_events`) | Configurable audit log (e.g. 30 days) | **Low** (Non-personal service times) |
+| **Alert Logs** | Event record (table, timestamp) | PostgreSQL (`table_events`) | Configurable audit log (e.g. 30 days) | **Low** (Non-personal service times) |
 
 ---
 
@@ -120,7 +120,7 @@ sequenceDiagram
     participant Browser as Web Browser (Edge)
     participant NodeAPI as Express API Engine
     participant Model as Hosted Model (Ultralytics)
-    participant Postgres as Database (demo_events)
+    participant Postgres as Database (table_events)
     actor Waiter as Service Staff (UI)
 
     Guest->>Browser: Enters Table Zone / Raises Hand
@@ -154,10 +154,11 @@ sequenceDiagram
 To enforce our Zero-Footage guarantee programmatically and prevent accidental regressions during development, SeeServe includes an automated privacy audit script.
 
 ### What the Audit Tool Checks:
-1. **Repository & Build Directories**: Scans the workspace, build outputs, and test artifacts for any forbidden video or image files (`.mp4`, `.mov`, `.avi`, `.jpg`, `.jpeg`, `.png`, `.webp`, `.raw`, `.h264`).
-2. **Temporary Directories**: Scans OS and process temporary folders for frame dumps.
-3. **Database Records**: Verifies that database migrations and table schemas contain zero binary (`BYTEA`, `BLOB`), base64, or image URL columns.
-4. **Log Inspection**: Verifies that HTTP server logs do not dump base64 payload strings.
+1. **Media files**: Scans the repository (excluding node_modules, build output and local data) for video or image files (`.mp4`, `.mov`, `.webm`, `.mkv`, `.avi`, `.jpg`, `.jpeg`, `.png`, `.bmp`, `.webp`, `.h264`, `.raw`), with an allow-list for the documentation screenshot.
+2. **Database schema**: Fails if any migration declares a `BYTEA`/`BLOB` column or a column named like `image`, `frame`, `photo`, `snapshot` or `thumbnail`.
+3. **Logging in code**: Fails if any TypeScript source passes request bodies, frame data or chat message text to `console.*`.
+
+It does not inspect OS temp folders or live log files; the code paths never write frames to disk, and request bodies are never logged.
 
 ### Running the Audit:
 ```bash
@@ -191,3 +192,24 @@ npm run check:privacy
 ## 7. Conclusion
 
 By shifting the computational boundary from "record, store, and analyze" to **"sample, infer, and destroy"**, SeeServe provides restaurant operators with unprecedented visibility and service responsiveness while upholding the highest modern standards of guest privacy.
+
+---
+
+## 8. Guest Data Added by the Platform Expansion (Nov 2026)
+
+Reservations, the walk-in queue and admin sign-in introduce a small amount of personal data. It is kept separate from the camera pipeline and handled as follows.
+
+| Data | Where | Why | Retention / controls |
+|---|---|---|---|
+| Guest name, email, party size, booking time | `reservations` | Send the ticket, let the guest check or cancel it | Consent checkbox on the booking form (`consent_at`); cancelling needs the booking email; not used for marketing |
+| Walk-in name, optional email | `queue_tickets` | Queue position and optional ticket email | Email optional; tickets older than today are not shown to guests |
+| Admin email, hashed sign-in token, hashed session | `admins`, `login_tokens`, `sessions` | Passwordless dashboard login | Only SHA-256 hashes stored; links expire in 15 min and work once; sessions expire in 12 h |
+| Who changed what | `audit_log` | Accountability for staff and AI-tool writes | Emails are masked (`g***@example.com`) |
+| Chat token counts | `ai_usage` | Spend caps and cost reporting | Counts only; chat text is never stored or logged |
+| Sales history | `orders`, `order_items`, `table_sessions` | Analytics | Demo data is synthetic and labelled `source = 'synthetic'` |
+
+**Chat privacy.** Guest messages are screened on-device first (rules, plus an optional local Ollama model) before anything is sent to Claude. Messages containing card numbers are blocked and never forwarded. Chat text is not persisted; only token counts are.
+
+**Email delivery.** Emails are sent by the self-hosted n8n workflow `infra/n8n/seeserve-email.json`, which has execution logging switched off so recipient data does not accumulate in n8n.
+
+**Not yet implemented (planned):** a self-service data-deletion endpoint. Until then, branch staff delete a guest's bookings on request.

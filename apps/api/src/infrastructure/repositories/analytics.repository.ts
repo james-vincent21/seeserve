@@ -30,15 +30,15 @@ export class AnalyticsRepository {
   async summary(filter: PeriodFilter) {
     const { rows } = await this.db.query(
       `WITH windows AS (
-         SELECT CASE WHEN ${DAY} > (now() AT TIME ZONE 'Asia/Dhaka')::date - $2::int THEN 'current' ELSE 'previous' END AS window,
+         SELECT CASE WHEN ${DAY} > (now() AT TIME ZONE 'Asia/Dhaka')::date - $2::int THEN 'current' ELSE 'previous' END AS period,
                 o.total, o.covers, o.branch_id
          FROM orders o
          WHERE o.status <> 'cancelled' AND ($1::text IS NULL OR o.branch_id = $1)
            AND ${DAY} > (now() AT TIME ZONE 'Asia/Dhaka')::date - 2 * $2::int)
-       SELECT window, sum(total) AS revenue, count(*)::int AS orders, sum(covers)::int AS covers FROM windows GROUP BY window`,
+       SELECT period, sum(total) AS revenue, count(*)::int AS orders, sum(covers)::int AS covers FROM windows GROUP BY period`,
       [filter.branchId ?? null, filter.days],
     );
-    const pick = (window: string) => rows.find((row) => row.window === window) ?? { revenue: 0, orders: 0, covers: 0 };
+    const pick = (period: string) => rows.find((row) => row.period === period) ?? { revenue: 0, orders: 0, covers: 0 };
     const current = pick('current');
     const previous = pick('previous');
     const revenue = num(current.revenue);

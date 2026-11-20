@@ -6,7 +6,7 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "concurrently -k -n api,web -c blue,green \"npm run dev -w @restaurant-vision/api\" \"npm run dev -w @restaurant-vision/web\"",
+    "dev": "concurrently -k -n api,web,landing -c blue,green,yellow \"npm run dev -w @restaurant-vision/api\" \"npm run dev -w @restaurant-vision/web\" \"npm run dev -w @restaurant-vision/landing\"",
     "dev:api": "npm run dev -w @restaurant-vision/api",
     "dev:web": "npm run dev -w @restaurant-vision/web",
     "build": "npm run build -w @restaurant-vision/api && npm run build -w @restaurant-vision/web",
@@ -19,9 +19,21 @@
     "db:seed": "npm run db:seed -w @restaurant-vision/api",
     "stack:up": "docker compose --profile automation up -d postgres n8n",
     "ollama:up": "docker compose --profile local-llm up -d ollama",
-    "typecheck": "tsc -p tests/tsconfig.json"
+    "typecheck": "tsc -p tests/tsconfig.json",
+    "db:lite": "tsx tools/dev-db.mts",
+    "dev:landing": "npm run dev -w @restaurant-vision/landing",
+    "build:landing": "npm run build -w @restaurant-vision/landing",
+    "build:all": "npm run build && npm run build:landing",
+    "mcp:guest": "npm run mcp -w @restaurant-vision/api -- guest",
+    "mcp:ops": "npm run mcp -w @restaurant-vision/api -- ops",
+    "mcp:analytics": "npm run mcp -w @restaurant-vision/api -- analytics",
+    "eval": "tsx evals/run.mts",
+    "n8n:import": "docker compose exec n8n n8n import:workflow --separate --input=/workflows"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.17",
+    "@electric-sql/pglite-pgvector": "^0.0.18",
+    "@electric-sql/pglite-socket": "^0.2.20",
     "concurrently": "^9.2.1"
   }
 }

@@ -20,6 +20,9 @@ const INJECTION_PATTERNS: RegExp[] = [
   /act as (an? )?(unrestricted|different|new) (ai|assistant|model)/i,
   /<\/?(system|instructions?)>/i,
   /(list|show|give) (me )?(all|other|every) (guests?|customers?|bookings|reservations|emails)/i,
+  /pretend (that )?(the |your )?(restaurant )?(rules|instructions|policies) (don'?t|do not|no longer) apply/i,
+  /(every|all|each) (reservation|booking|ticket) (codes?|numbers?)/i,
+  /(owner|admin|manager)'?s? (email|password|phone|login)/i,
 ];
 
 // 13–19 digits, optionally separated by spaces or dashes, that pass the Luhn check.

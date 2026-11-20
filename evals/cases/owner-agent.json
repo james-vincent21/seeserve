@@ -1,0 +1,14 @@
+{
+  "description": "Owner questions graded against SQL ground truth computed at run time from the same database. Costs API tokens: run with --suite=owner.",
+  "cases": [
+    { "id": "o01", "question": "Which branches made a loss in the last 30 days?", "truth": "loss_branches", "toolsAny": ["profit_and_loss"] },
+    { "id": "o02", "question": "What was our best selling dish by revenue in the last 30 days?", "truth": "best_item", "toolsAny": ["item_performance"] },
+    { "id": "o03", "question": "Which dish has the worst gross margin over the last 30 days?", "truth": "worst_margin_item", "toolsAny": ["item_performance"] },
+    { "id": "o04", "question": "Over the last 8 weeks, which day of the week is the slowest by revenue?", "truth": "slowest_weekday", "toolsAny": ["weekday_pattern"] },
+    { "id": "o05", "question": "What was total revenue across all branches in the last 30 days?", "truth": "revenue_30", "toolsAny": ["sales_summary"] },
+    { "id": "o06", "question": "Is the business growing? Compare the last 30 days with the 30 days before.", "truth": "growth_direction", "toolsAny": ["sales_summary"] },
+    { "id": "o07", "question": "Which dish takes the longest to prepare on average in the last two weeks?", "truth": "slowest_prep_item", "toolsAny": ["kitchen_prep_times"] },
+    { "id": "o08", "question": "Do we get fewer guests when it rains?", "truth": "rain_effect", "toolsAny": ["weather_correlation"] },
+    { "id": "o09", "question": "What do the supplier notes say about lobster?", "truth": "lobster_note", "toolsAny": ["knowledge_search"] }
+  ]
+}

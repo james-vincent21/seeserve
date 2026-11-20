@@ -1,0 +1,19 @@
+{
+  "description": "Questions with the document that must appear in the top 3 retrieval results (hit@3).",
+  "cases": [
+    { "id": "r01", "query": "Is there parking in Gulshan?", "expectTitle": "Guest FAQ" },
+    { "id": "r02", "query": "Do any dishes contain nuts?", "expectTitle": "Guest FAQ" },
+    { "id": "r03", "query": "When is the hilsa expensive?", "expectTitle": "Supplier notes" },
+    { "id": "r04", "query": "lobster minimum order importer", "expectTitle": "Supplier notes" },
+    { "id": "r05", "query": "mutton delivery cut-off time", "expectTitle": "Supplier notes" },
+    { "id": "r06", "query": "How long is a reserved table held for latecomers?", "expectTitle": "Reservation and queue policy" },
+    { "id": "r07", "query": "how is the walk-in wait time estimated", "expectTitle": "Reservation and queue policy" },
+    { "id": "r08", "query": "what happens to alerts during Ramadan", "expectTitle": "Iftar service policy" },
+    { "id": "r09", "query": "Are camera videos stored?", "expectTitle": "Guest privacy notice" },
+    { "id": "r10", "query": "can guests delete their booking data", "expectTitle": "Guest privacy notice" },
+    { "id": "r11", "query": "spicy yoghurt drink with kacchi", "expectTitle": "Menu" },
+    { "id": "r12", "query": "pomfret grilled with lemon butter", "expectTitle": "Menu" },
+    { "id": "r13", "query": "complimentary dessert for birthdays", "expectTitle": "Guest FAQ" },
+    { "id": "r14", "query": "kitchen last orders", "expectTitle": "Guest FAQ" }
+  ]
+}

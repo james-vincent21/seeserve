@@ -13,7 +13,7 @@ interface Weekday { weekday: string; avgRevenue: number; avgOrders: number }
 interface Hour { hour: number; orders: number }
 interface Pnl { branch: string; revenue: number; cogs: number; overheads: number; netProfit: number; netMarginPct: number | null; status: 'profit' | 'loss' }
 interface Prep { item: string; avgPrepMinutes: number; p90PrepMinutes: number; targetMinutes: number; samples: number }
-interface Weather { correlationRainVsCovers: number | null; avgCoversRainyDay: number | null; avgCoversDryDay: number | null; rainyDays: number; itemsThatSellMoreWhenRaining: Array<{ item: string; rainyDaySharePct: number; dryDaySharePct: number }>; caveat: string | null }
+interface Weather { correlationRainVsCovers: number | null; rainyDayCoverChangePct: number | null; method: string; avgCoversRainyDay: number | null; avgCoversDryDay: number | null; rainyDays: number; itemsThatSellMoreWhenRaining: Array<{ item: string; rainyDaySharePct: number; dryDaySharePct: number }>; caveat: string | null }
 interface Turn { branch: string; avgTurnMinutes: number; revenuePerCover: number }
 
 const INK = '#24342a';
@@ -196,8 +196,8 @@ function AnalyticsView() {
         <section className={ui.card}>
           <div className={ui.cardHead}><div><small>EXTERNAL FACTORS</small><h2>Rain vs covers (90 days)</h2></div></div>
           <div className={`${ui.cardBody} ${ui.grid3}`}>
-            <div className={ui.kpi}><span>Correlation</span><strong>{data.weather.correlationRainVsCovers ?? '—'}</strong><small>rainfall vs daily covers (Pearson r)</small></div>
-            <div className={ui.kpi}><span>Covers per day</span><strong>{data.weather.avgCoversRainyDay ?? '—'} vs {data.weather.avgCoversDryDay ?? '—'}</strong><small>rainy vs dry ({data.weather.rainyDays} rainy days)</small></div>
+            <div className={ui.kpi}><span>Correlation</span><strong>{data.weather.correlationRainVsCovers ?? '—'}</strong><small>rainfall vs daily covers, branch and weekday adjusted</small></div>
+            <div className={ui.kpi}><span>Guests on rainy days</span><strong className={(data.weather.rainyDayCoverChangePct ?? 0) < 0 ? ui.down : ui.up}>{data.weather.rainyDayCoverChangePct === null ? '—' : `${data.weather.rainyDayCoverChangePct > 0 ? '+' : ''}${data.weather.rainyDayCoverChangePct}%`}</strong><small>vs the same branch and weekday ({data.weather.rainyDays} rainy days)</small></div>
             <div className={ui.kpi}><span>Sells more in rain</span><strong style={{ fontSize: 16 }}>{data.weather.itemsThatSellMoreWhenRaining[0]?.item ?? '—'}</strong>
               <small>{data.weather.itemsThatSellMoreWhenRaining[0] ? `${data.weather.itemsThatSellMoreWhenRaining[0].rainyDaySharePct}% of items on rainy days vs ${data.weather.itemsThatSellMoreWhenRaining[0].dryDaySharePct}% dry` : ''}</small></div>
           </div>

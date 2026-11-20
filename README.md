@@ -50,9 +50,37 @@ To run the services in separate terminals instead, use `npm run dev:api` and `np
 
 The SQL schema is initialized when the PostgreSQL volume is first created. If you change the initial migration during early development, reset the local database with `docker compose down -v` and `npm run db:up` (this deletes local database data).
 
+## Run the full platform (hub, dashboard, landing site)
+
+```bash
+npm install
+cp .env.example .env            # set ADMIN_EMAILS; optionally ANTHROPIC_API_KEY for the chatbots
+npm run db:up                   # PostgreSQL 17 + pgvector in Docker   (no Docker? use: npm run db:lite)
+npm run db:seed                 # migrations + 90 days of labelled synthetic history + retrieval corpus
+npm run dev                     # API :4000 · dashboard :3000 · landing site :3001
+```
+
+| URL | What |
+|---|---|
+| http://localhost:3001 | Public site: menu, branch map, booking, queue ticket, ticket lookup, chat concierge |
+| http://localhost:3000 | CCTV floor view (public demo) |
+| http://localhost:3000/login | Admin sign-in by email link (printed in the API console when no email service is set) |
+| http://localhost:3000/ops · /analytics · /assistant | Queue & bookings (live), sales analytics, owner AI assistant |
+| http://localhost:3000/docs | Live system docs: MCP servers, prompt versions, latest eval run |
+
+Optional extras:
+- **Local models** (embeddings, contextual chunking, on-device safety screen): install [Ollama](https://ollama.com), then
+  `ollama pull nomic-embed-text llama3.2:3b` and re-run `npm run db:seed`. Without it, search falls back to keyword-only.
+- **Email and schedules** via n8n: `npm run stack:up && npm run n8n:import` (see `infra/n8n/README.md`).
+- **MCP** for Claude Desktop/Code and other agents: see [docs/MCP.md](docs/MCP.md).
+- **Evals**: `npm run eval` (free suites) · `npm run eval -- --suite=guest,owner` (uses Claude, costs tokens).
+
 ## Module boundaries
 
-- `apps/web`: presentation and API client only.
+- `apps/web`: staff/owner dashboard (presentation and API client only).
+- `apps/landing`: public restaurant site; talks to the hub only through `/api/v1`.
+- `apps/api/src/interfaces/mcp`: MCP servers (`seeserve-guest`, `-ops`, `-analytics`) built from the shared tool registry.
+- `prompts/`: versioned prompt library loaded at runtime. `evals/`: eval sets and results. `infra/n8n/`: workflows.
 - `apps/api/src/domain`: business entities, rules and domain services; framework and database independent.
 - `apps/api/src/application`: use cases orchestrating domain and repository ports.
 - `apps/api/src/infrastructure`: PostgreSQL, model-provider adapter, config and external services.

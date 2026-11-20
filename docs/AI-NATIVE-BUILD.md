@@ -38,7 +38,7 @@ seeserve/
 │   ├── web/                    # Presentation Layer (Next.js 16 + React 19)
 │   │   ├── src/features/dashboard/
 │   │   │   ├── dashboard.tsx   # Floor status, real-time alerts feed, interactive zones
-│   │   │   └── clip-player.tsx # In-browser hardware-accelerated video decoding & canvas sampling
+│   │   │   (frame sampling with OffscreenCanvas lives in dashboard.tsx)
 │   └── api/                    # Core Engine (Node.js + Express + TypeScript)
 │       ├── src/
 │       │   ├── domain/         # Pure business logic & entities (Zero dependencies)
@@ -182,14 +182,14 @@ In Ramadan or communal dining contexts, restaurants experience a unique operatio
 Under standard rules, every table in the restaurant would trigger an "Unattended Alert," flooding staff with false positives. 
 
 SeeServe features an integrated operational mode toggle:
-- **Standard Mode**: Unattended alert threshold $= t_{\text{unattended}}$ (default: 20s in demo, 5 min in prod).
-- **Iftar Mode**: Automatically multiplies the unattended threshold by $10\times$ (suppressing early alerts) and prioritizes hand-raise alerts, aligning AI perception with cultural hospitality practices.
+- **Standard Mode**: Unattended alert threshold $= t_{\text{unattended}}$ (DEMO_UNATTENDED_SECONDS: 2 s in the presentation .env, 90 s code default; a real floor would use minutes).
+- **Iftar Mode**: Automatically multiplies the unattended threshold by $10\times$ (suppressing early alerts) while hand-raise alerts keep their normal timing, aligning AI perception with cultural hospitality practices.
 
 ---
 
 ## 7. Performance & Latency Benchmarks
 
-| Metric | Target | Measured Performance (Local / Ultralytics) |
+| Metric | Target | Expected (design estimate — not yet measured) |
 |---|---|---|
 | Frame Sampling Cadence | 1 frame / 3.0s | 3.0s interval (configurable) |
 | In-Browser Encoding (`OffscreenCanvas`) | $< 15\text{ms}$ | $\sim 8\text{ms}$ |
@@ -203,3 +203,19 @@ SeeServe features an integrated operational mode toggle:
 ## 8. Summary
 
 SeeServe's AI-native architecture demonstrates that modern restaurant intelligence does not require invasive sensor hardware, expensive edge servers, or compromising guest privacy. By uniting clean software architecture, sparse frame sampling, spatial geometry, and cultural adaptability, SeeServe turns passive security cameras into an active, respectful digital floor manager.
+
+---
+
+## 9. Platform Expansion: Hub, Retrieval, Agents and MCP (Nov 2026)
+
+The CCTV demo is now one input to a restaurant **hub** (`apps/api`). Peripheral apps (the dashboard `apps/web`, the public site `apps/landing`, external AI clients) connect only through REST (`/api/v1`) or MCP (`/mcp/*`).
+
+| Capability | How | Code |
+|---|---|---|
+| Reservations and queue | Booking rules, readable ticket codes, wait estimates by simulating table turnover with reservation holds; live dashboard over SSE | `domain/queue`, `domain/reservations`, `application/hub` |
+| Analytics | SQL aggregates (growth, items, weekdays, P&L, prep and turn times), trend + weekday-seasonality forecast, anomaly z-scores, weather correlation adjusted for branch and weekday | `infrastructure/repositories/analytics.repository.ts`, `domain/analytics/forecast.ts` |
+| Retrieval (RAG) | Semantic chunking → contextual chunk prefix from a local model (Contextual Retrieval) → `nomic-embed-text` embeddings in pgvector + Postgres full-text → reciprocal-rank fusion (hybrid search) | `application/rag/*`, migration `003_rag.sql` |
+| Agents | Claude via the Anthropic SDK tool runner. The guest concierge books and checks tickets; the owner analyst answers business questions only from SQL-backed tools, plus document search for context | `application/chat/agent.ts`, `prompts/` |
+| MCP | One tool registry served as three least-privilege MCP servers (guest / ops / analytics) over stdio and Streamable HTTP | `application/tools/registry.ts`, `interfaces/mcp/*`, [MCP.md](MCP.md) |
+| Guardrails | Rules plus an on-device LLM pre-screen, card-number blocking, PII redaction, strict tool schemas, explicit guest confirmation for writes, role-scoped tools, spend/turn caps, audit log, refusal fallback | `application/chat/guardrails.ts`, `application/tools/registry.ts` |
+| Evals | Guardrail precision/recall, retrieval hit@3/MRR, scripted guest conversations, owner answers graded against SQL ground truth, local-model comparison | `evals/`, results in `evals/results/` |

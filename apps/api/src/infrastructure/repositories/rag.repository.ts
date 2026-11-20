@@ -47,14 +47,20 @@ export class RagRepository {
     }
   }
 
+  /**
+   * Full-text search with OR semantics: any query word can match, and chunks matching more (and rarer)
+   * words rank higher. Requiring every word (AND) misses natural questions like "how long is a table held".
+   */
   async keywordSearch(query: string, limit: number, sourceTypes?: SourceType[]): Promise<ChunkHit[]> {
+    const words = [...new Set(query.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [])].slice(0, 20);
+    if (words.length === 0) return [];
     const { rows } = await this.db.query(
       `SELECT c.id, c.document_id, d.title, d.source_type, c.content, c.context
        FROM document_chunks c JOIN documents d ON d.id = c.document_id,
-            websearch_to_tsquery('english', $1) q
+            to_tsquery('english', $1) q
        WHERE c.tsv @@ q AND ($3::text[] IS NULL OR d.source_type = ANY($3))
-       ORDER BY ts_rank_cd(c.tsv, q) DESC LIMIT $2`,
-      [query, limit, sourceTypes ?? null],
+       ORDER BY ts_rank_cd(c.tsv, q, 1) DESC LIMIT $2`,
+      [words.join(' | '), limit, sourceTypes ?? null],
     );
     return rows.map(toHit);
   }
