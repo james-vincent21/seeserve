@@ -1,6 +1,7 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    # PostgreSQL 17 with the pgvector extension (needed by migration 003_rag.sql).
+    image: pgvector/pgvector:pg17
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-restaurant_vision}
@@ -17,5 +18,36 @@ services:
       timeout: 5s
       retries: 10
 
+  # Workflow automation: ticket/login emails, Google Sheets inventory, scheduled reports.
+  # Workflows are versioned in infra/n8n/ and imported with `npm run n8n:import`.
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    profiles: ["automation"]
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      GENERIC_TIMEZONE: Asia/Dhaka
+      TZ: Asia/Dhaka
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      SEESERVE_API_URL: ${N8N_SEESERVE_API_URL:-http://host.docker.internal:4000}
+      SEESERVE_WEBHOOK_SECRET: ${N8N_WEBHOOK_SECRET:-change-me}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./infra/n8n:/workflows:ro
+
+  # Optional: run Ollama in Docker instead of installing it natively (CPU only by default).
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["local-llm"]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
 volumes:
   postgres_data:
+  n8n_data:
+  ollama_data:

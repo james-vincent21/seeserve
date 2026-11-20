@@ -2,7 +2,9 @@
   "name": "restaurant-vision",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev": "concurrently -k -n api,web -c blue,green \"npm run dev -w @restaurant-vision/api\" \"npm run dev -w @restaurant-vision/web\"",
     "dev:api": "npm run dev -w @restaurant-vision/api",
@@ -12,7 +14,12 @@
     "check:privacy": "tsx tools/check-no-footage.ts",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
-    "db:logs": "docker compose logs -f postgres"
+    "db:logs": "docker compose logs -f postgres",
+    "db:migrate": "npm run db:migrate -w @restaurant-vision/api",
+    "db:seed": "npm run db:seed -w @restaurant-vision/api",
+    "stack:up": "docker compose --profile automation up -d postgres n8n",
+    "ollama:up": "docker compose --profile local-llm up -d ollama",
+    "typecheck": "tsc -p tests/tsconfig.json"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

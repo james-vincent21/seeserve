@@ -1,28 +1,8 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { DemoSession } from '../../../application/demo/demo-session.js';
-import { env } from '../../../config/env.js';
-import { MockInferenceProvider } from '../../../infrastructure/inference/mock.provider.js';
-import { UltralyticsApiProvider } from '../../../infrastructure/inference/ultralytics-api.provider.js';
-import { YoloV8HttpProvider } from '../../../infrastructure/inference/yolov8-http.provider.js';
-import { PostgresDemoEventRepository } from '../../../infrastructure/repositories/postgres-demo-event.repository.js';
-import { pool } from '../../../infrastructure/database/pool.js';
+import { container } from '../../../container.js';
 
-function createProvider() {
-  switch (env.INFERENCE_MODE) {
-    case 'ultralytics':
-      return new UltralyticsApiProvider();
-    case 'http':
-      return new YoloV8HttpProvider();
-    case 'mock':
-    default:
-      return new MockInferenceProvider();
-  }
-}
-
-const provider = createProvider();
-const eventRepository = new PostgresDemoEventRepository(pool);
-const demoSession = new DemoSession(provider, eventRepository);
+const demoSession = container.demo;
 
 const frameSchema = z.object({
   image: z.string().min(100).max(3_000_000),
